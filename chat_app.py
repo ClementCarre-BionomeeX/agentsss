@@ -6,6 +6,9 @@ from html.parser import HTMLParser
 import re
 
 
+BRAVE_API_KEY = "BSAsSbus0w3hVnrBYSxt_aZZjZLGvIg"  # 🔁 Replace this
+
+
 def html_to_markdown(text):
     # Convert <strong> and <b> to bold
     text = re.sub(r"</?(strong|b)>", "**", text)
@@ -14,9 +17,6 @@ def html_to_markdown(text):
     # Remove all other tags (simplified)
     text = re.sub(r"<[^>]+>", "", text)
     return text
-
-
-BRAVE_API_KEY = "BSAsSbus0w3hVnrBYSxt_aZZjZLGvIg"  # 🔁 Replace this
 
 
 class HTMLStripper(HTMLParser):
@@ -65,21 +65,30 @@ def perform_image_search(query: str) -> list:
                 "Accept": "application/json",
                 "X-Subscription-Token": BRAVE_API_KEY,
             },
-            params={"q": query, "count": 5},
+            params={"q": query, "count": 6},  # 6 is divisible by 3 for nice grid
             timeout=10,
         )
         images = response.json().get("results", [])
         print("🧪 Raw image results:", images)
 
-        urls = []
+        results = []
         for img in images:
-            # ✅ This is the real image thumbnail
-            thumbnail = img.get("thumbnail", {}).get("src")
-            if isinstance(thumbnail, str) and thumbnail.startswith("http"):
-                urls.append(thumbnail)
+            thumb = img.get("thumbnail", {}).get("src")
+            full_img = img.get("properties", {}).get("url") or img.get("url")
+            title = img.get("title", "Image")
+            source = img.get("source", "")
+            if isinstance(thumb, str) and thumb.startswith("http"):
+                results.append(
+                    {
+                        "thumbnail": thumb,
+                        "full_url": full_img,
+                        "title": title,
+                        "source": source,
+                    }
+                )
             else:
-                print(f"⚠️ Skipping invalid thumbnail: {thumbnail}")
-        return urls
+                print(f"⚠️ Skipped: {thumb}")
+        return results
     except Exception as e:
         print(f"❌ Image search failed: {e}")
         return []
@@ -158,12 +167,26 @@ if user_input:
     # 🖼️ /image command
     elif user_input.startswith("/image "):
         query = user_input[len("/image ") :].strip()
-        image_urls = perform_image_search(query)
+        image_data = perform_image_search(query)
 
         with st.chat_message("assistant"):
-            st.markdown("🖼️ **Top Image Results:**")
-            for url in image_urls:
-                st.image(url, use_container_width=True)
+            if image_data:
+                st.markdown("🖼️ **Top Image Results:**")
+                cols = st.columns(3)  # 3 per row
+
+                for i, img in enumerate(image_data):
+                    with cols[i % 3]:
+                        st.image(img["thumbnail"], use_container_width=True)
+                        st.markdown(
+                            f"""<div style='font-size: 0.85em'>
+                            <b>{img['title']}</b><br>
+                            <i>{img['source']}</i><br>
+                            <a href="{img['full_url']}" target="_blank">View full image</a>
+                            </div>""",
+                            unsafe_allow_html=True,
+                        )
+            else:
+                st.markdown("⚠️ No images could be rendered.")
 
         st.session_state.messages.append(
             {"role": "assistant", "content": f"[Images returned for: {query}]"}
